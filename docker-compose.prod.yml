@@ -1,0 +1,78 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:53288:80"
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3333
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-pi_bebi}
+      DB_USER: ${DB_USER:-pi_bebi}
+      DB_PASSWORD: ${DB_PASSWORD:-pi_bebi-change-me}
+      DB_DIALECT: mysql
+      JWT_SECRET: ${JWT_SECRET:-change_me}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+      DEEPSEEK_REASONING_MODEL: ${DEEPSEEK_REASONING_MODEL:-deepseek-reasoner}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      AI_SYSTEM_PROMPT: ${AI_SYSTEM_PROMPT:-}
+      MIDTRANS_SERVER_KEY: ${MIDTRANS_SERVER_KEY:-}
+      MIDTRANS_CLIENT_KEY: ${MIDTRANS_CLIENT_KEY:-}
+      MIDTRANS_IS_PRODUCTION: ${MIDTRANS_IS_PRODUCTION:-false}
+      MIDTRANS_NOTIFICATION_URL: ${APP_ORIGIN:-https://pi-bebi.31-97-223-132.sslip.io}/api/payment/callback
+      MIDTRANS_CALLBACK_URL: ${APP_ORIGIN:-https://pi-bebi.31-97-223-132.sslip.io}/api/payment/callback
+      MIDTRANS_FINISH_URL: ${APP_ORIGIN:-https://pi-bebi.31-97-223-132.sslip.io}/user/dashboard/
+      MIDTRANS_UNFINISH_URL: ${APP_ORIGIN:-https://pi-bebi.31-97-223-132.sslip.io}/user/dashboard/
+      MIDTRANS_ERROR_URL: ${APP_ORIGIN:-https://pi-bebi.31-97-223-132.sslip.io}/user/dashboard/
+      MIDTRANS_PAYMENT_EXPIRED_MINUTES: ${MIDTRANS_PAYMENT_EXPIRED_MINUTES:-60}
+      MIDTRANS_SKIP_SIGNATURE_VALIDATION: ${MIDTRANS_SKIP_SIGNATURE_VALIDATION:-false}
+      MIDTRANS_NOTIFICATION_VALID_IPS: ${MIDTRANS_NOTIFICATION_VALID_IPS:-}
+      DOKU_CLIENT_ID: ${DOKU_CLIENT_ID:-}
+      DOKU_SECRET_KEY: ${DOKU_SECRET_KEY:-}
+      DOKU_BASE_URL: ${DOKU_BASE_URL:-https://api-sandbox.doku.com}
+      DOKU_CALLBACK_URL: ${DOKU_CALLBACK_URL:-}
+      DOKU_RETURN_URL: ${APP_ORIGIN:-https://pi-bebi.31-97-223-132.sslip.io}/user/dashboard/
+      DOKU_FAILED_URL: ${APP_ORIGIN:-https://pi-bebi.31-97-223-132.sslip.io}/user/dashboard/
+      DOKU_PAYMENT_EXPIRED_MINUTES: ${DOKU_PAYMENT_EXPIRED_MINUTES:-60}
+    ports:
+      - "127.0.0.1:53289:3333"
+
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-pi_bebi}
+      MYSQL_USER: ${DB_USER:-pi_bebi}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-pi_bebi-change-me}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-pi_bebi-root-change-me}
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    volumes:
+      - pi-bebi-mysql-data:/var/lib/mysql
+
+volumes:
+  pi-bebi-mysql-data:

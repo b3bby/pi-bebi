@@ -5,7 +5,7 @@
     }
 
     const body = document.body;
-    const API_BASE = window.API_BASE_URL || 'http://localhost:3333/api';
+    const API_BASE = window.API_BASE_URL || `${window.location.origin}/api`;
     const subtitle = modal.querySelector('[data-auth-subtitle]');
     const tabButtons = Array.from(modal.querySelectorAll('[data-auth-tab]'));
     const panels = Array.from(modal.querySelectorAll('[data-auth-panel]'));

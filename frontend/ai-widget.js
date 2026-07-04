@@ -1,5 +1,5 @@
 (() => {
-    const API_BASE = window.API_BASE_URL || 'http://localhost:3333/api';
+    const API_BASE = window.API_BASE_URL || `${window.location.origin}/api`;
     const SESSION_KEY = 'bidfix_ai_session';
     const PANEL_STATE_KEY = 'bidfix_ai_panel_state';
     const PANEL_SIZE_KEY = 'bidfix_ai_panel_size';
