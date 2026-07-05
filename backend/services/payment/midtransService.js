@@ -66,7 +66,13 @@ const mapInternalPaymentStatus = (providerStatus) => {
   return 'pending';
 };
 
-const buildCreateTransactionPayload = ({ amount, invoiceNumber, customer, paymentDueDate }) => {
+const buildCreateTransactionPayload = ({
+  amount,
+  invoiceNumber,
+  customer,
+  paymentDueDate,
+  callbackUrls,
+}) => {
   const payload = {
     transaction_details: {
       order_id: invoiceNumber,
@@ -96,9 +102,15 @@ const buildCreateTransactionPayload = ({ amount, invoiceNumber, customer, paymen
     };
   }
 
-  const finishUrl = String(process.env.MIDTRANS_FINISH_URL || '').trim();
-  const unfinishUrl = String(process.env.MIDTRANS_UNFINISH_URL || '').trim();
-  const errorUrl = String(process.env.MIDTRANS_ERROR_URL || '').trim();
+  const finishUrl = String(
+    callbackUrls?.finish || process.env.MIDTRANS_FINISH_URL || ''
+  ).trim();
+  const unfinishUrl = String(
+    callbackUrls?.unfinish || process.env.MIDTRANS_UNFINISH_URL || ''
+  ).trim();
+  const errorUrl = String(
+    callbackUrls?.error || process.env.MIDTRANS_ERROR_URL || ''
+  ).trim();
   const callbacks = {
     ...(finishUrl ? { finish: finishUrl } : {}),
     ...(unfinishUrl ? { unfinish: unfinishUrl } : {}),
@@ -112,7 +124,13 @@ const buildCreateTransactionPayload = ({ amount, invoiceNumber, customer, paymen
   return payload;
 };
 
-const createCheckoutPayment = async ({ amount, invoiceNumber, customer, paymentDueDate }) => {
+const createCheckoutPayment = async ({
+  amount,
+  invoiceNumber,
+  customer,
+  paymentDueDate,
+  callbackUrls,
+}) => {
   const serverKey = String(process.env.MIDTRANS_SERVER_KEY || '').trim();
 
   if (!serverKey) {
@@ -124,6 +142,7 @@ const createCheckoutPayment = async ({ amount, invoiceNumber, customer, paymentD
     invoiceNumber,
     customer,
     paymentDueDate,
+    callbackUrls,
   });
 
   const notificationUrl = String(
