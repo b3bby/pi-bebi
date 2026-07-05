@@ -1,5 +1,5 @@
 (() => {
-    const API_BASE = window.API_BASE_URL || 'http://localhost:3333/api';
+    const API_BASE = window.API_BASE_URL || `${window.location.origin}/api`;
     const landingPageUrl = '../../index.html';
 
     const statTotalBids = document.getElementById('statTotalBids');

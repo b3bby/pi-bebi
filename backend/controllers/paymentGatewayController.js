@@ -37,6 +37,29 @@ const extractProviderErrorMessage = (responsePayload) =>
   responsePayload?.message ||
   null;
 
+const getTrustedReturnUrl = (req) => {
+  const rawUrl = String(req.body?.returnUrl || '').trim();
+  if (!rawUrl) {
+    return null;
+  }
+
+  try {
+    const parsedUrl = new URL(rawUrl);
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      return null;
+    }
+
+    const requestOrigin = String(req.headers.origin || '').trim();
+    if (requestOrigin && parsedUrl.origin !== requestOrigin) {
+      return null;
+    }
+
+    return parsedUrl.toString();
+  } catch (_error) {
+    return null;
+  }
+};
+
 const findExistingIdempotent = async ({ idempotencyKey, orderId }) => {
   if (!idempotencyKey) {
     return null;
@@ -323,12 +346,20 @@ const create = async (req, res) => {
       email: req.body?.customerEmail,
       phone: req.body?.customerPhone,
     };
+    const trustedReturnUrl = getTrustedReturnUrl(req);
 
     const midtransResponse = await createCheckoutPayment({
       amount,
       invoiceNumber,
       customer,
       paymentDueDate: req.body?.paymentDueDate,
+      callbackUrls: trustedReturnUrl
+        ? {
+            finish: trustedReturnUrl,
+            unfinish: trustedReturnUrl,
+            error: trustedReturnUrl,
+          }
+        : null,
     });
 
     const providerStatus = mapMidtransStatus({
@@ -467,24 +498,40 @@ const callback = async (req, res) => {
 const status = async (req, res) => {
   try {
     const { id } = req.params;
-
+    const scope = String(req.query.scope || 'auto').trim().toLowerCase();
     const numericId = Number.parseInt(id, 10);
-    const where = Number.isInteger(numericId)
-      ? {
-          [Op.or]: [
-            { id: numericId },
-            { payment_id: numericId },
-            { order_id: numericId },
-            { doku_invoice_id: id },
-          ],
-        }
-      : { doku_invoice_id: id };
+    const findLogs = async (where) =>
+      PaymentLog.findAll({
+        where,
+        order: [['created_at', 'DESC']],
+        limit: 20,
+      });
 
-    const logs = await PaymentLog.findAll({
-      where,
-      order: [['created_at', 'DESC']],
-      limit: 20,
-    });
+    let logs = [];
+
+    if (scope === 'order') {
+      if (!Number.isInteger(numericId)) {
+        return res.status(400).json({ message: 'Numeric order id is required' });
+      }
+      logs = await findLogs({ order_id: numericId });
+    } else if (scope === 'payment') {
+      if (!Number.isInteger(numericId)) {
+        return res.status(400).json({ message: 'Numeric payment id is required' });
+      }
+      logs = await findLogs({ payment_id: numericId });
+    } else if (scope === 'invoice') {
+      logs = await findLogs({ doku_invoice_id: id });
+    } else if (Number.isInteger(numericId)) {
+      logs = await findLogs({ order_id: numericId });
+      if (!logs.length) {
+        logs = await findLogs({ payment_id: numericId });
+      }
+      if (!logs.length) {
+        logs = await findLogs({ doku_invoice_id: id });
+      }
+    } else {
+      logs = await findLogs({ doku_invoice_id: id });
+    }
 
     if (!logs.length) {
       return res.status(404).json({ message: 'Payment status not found' });
@@ -515,11 +562,24 @@ const status = async (req, res) => {
       }
     }
 
-    const refreshedLogs = await PaymentLog.findAll({
-      where,
-      order: [['created_at', 'DESC']],
-      limit: 20,
-    });
+    let refreshedLogs = [];
+    if (scope === 'order' && Number.isInteger(numericId)) {
+      refreshedLogs = await findLogs({ order_id: numericId });
+    } else if (scope === 'payment' && Number.isInteger(numericId)) {
+      refreshedLogs = await findLogs({ payment_id: numericId });
+    } else if (scope === 'invoice') {
+      refreshedLogs = await findLogs({ doku_invoice_id: id });
+    } else if (Number.isInteger(numericId)) {
+      refreshedLogs = await findLogs({ order_id: numericId });
+      if (!refreshedLogs.length) {
+        refreshedLogs = await findLogs({ payment_id: numericId });
+      }
+      if (!refreshedLogs.length) {
+        refreshedLogs = await findLogs({ doku_invoice_id: id });
+      }
+    } else {
+      refreshedLogs = await findLogs({ doku_invoice_id: id });
+    }
 
     if (refreshedLogs.length > 0) {
       latest = refreshedLogs[0];

@@ -1,5 +1,5 @@
 (() => {
-    const API_BASE = window.API_BASE_URL || 'http://localhost:3333/api';
+    const API_BASE = window.API_BASE_URL || `${window.location.origin}/api`;
     const themeClasses = ['theme-blue', 'theme-yellow', 'theme-pink', 'theme-green'];
     const landingPageUrl = '../../index.html';
 
@@ -893,6 +893,22 @@
         return orders;
     };
 
+    const syncPaymentStatusesForOrders = async (orders) => {
+        const activeOrders = Array.isArray(orders)
+            ? orders.filter((order) => order && order.id && order.status !== 'completed')
+            : [];
+
+        if (!activeOrders.length) {
+            return;
+        }
+
+        await Promise.all(
+            activeOrders.map((order) =>
+                fetchJson(`${API_BASE}/payment/status/${order.id}?scope=order`).catch(() => null)
+            )
+        );
+    };
+
     const loadPayments = async () => {
         const user = getStoredUser();
         if (!user?.id) {
@@ -916,7 +932,15 @@
         return payments;
     };
 
-    const pollPaymentResult = async (lookupId) => {
+    const loadOrdersAndPayments = async () => {
+        const orders = await loadOrders();
+        await syncPaymentStatusesForOrders(orders);
+        const refreshedOrders = await loadOrders();
+        await loadPayments();
+        return refreshedOrders;
+    };
+
+    const pollPaymentResult = async ({ id: lookupId, scope = 'invoice' } = {}) => {
         if (!lookupId) {
             return null;
         }
@@ -925,7 +949,9 @@
         let lastKnownResult = null;
         for (let attempt = 0; attempt < attempts; attempt += 1) {
             try {
-                const result = await fetchJson(`${API_BASE}/payment/status/${encodeURIComponent(String(lookupId))}`);
+                const result = await fetchJson(
+                    `${API_BASE}/payment/status/${encodeURIComponent(String(lookupId))}?scope=${scope}`
+                );
                 lastKnownResult = result;
                 const status = String(result?.status || '').toUpperCase();
                 if (['PAID', 'FAILED', 'EXPIRED', 'REFUNDED'].includes(status)) {
@@ -1084,7 +1110,7 @@
         showOrderLoading(true);
         showOrderEmpty(false);
         try {
-            const [orders] = await Promise.all([loadOrders(), loadPayments()]);
+            const orders = await loadOrdersAndPayments();
             renderOrders(orders);
         } catch (error) {
             showOrderEmpty(true);
@@ -1134,10 +1160,12 @@
                     customerName: auth.user.name,
                     customerEmail: auth.user.email,
                     customerPhone: auth.user.phone,
+                    returnUrl: window.location.href,
                 },
                 { 'X-Idempotency-Key': idempotencyKey }
             );
 
+            const paymentUrl = String(gatewayResponse?.paymentUrl || '').trim();
             const snapToken = gatewayResponse?.snapToken || null;
             const snapClientKey = gatewayResponse?.snapClientKey || window.MIDTRANS_CLIENT_KEY || '';
             const snapIsProduction =
@@ -1156,19 +1184,33 @@
                 return true;
             }
 
-            if (!snapToken) {
+            if (!snapToken && !paymentUrl) {
                 await showPaymentNotice({
                     title: 'Pembayaran Gagal',
-                    message: 'Snap token belum tersedia. Silakan coba lagi beberapa saat.',
+                    message: 'Snap token atau link pembayaran belum tersedia. Silakan coba lagi beberapa saat.',
                 });
                 return false;
             }
 
-            const snapResult = await openMidtransSnapPopup({
-                token: snapToken,
-                clientKey: snapClientKey,
-                isProduction: snapIsProduction,
-            });
+            if (!snapToken && paymentUrl) {
+                window.location.assign(paymentUrl);
+                return true;
+            }
+
+            let snapResult = null;
+            try {
+                snapResult = await openMidtransSnapPopup({
+                    token: snapToken,
+                    clientKey: snapClientKey,
+                    isProduction: snapIsProduction,
+                });
+            } catch (error) {
+                if (paymentUrl) {
+                    window.location.assign(paymentUrl);
+                    return true;
+                }
+                throw error;
+            }
 
             if (snapResult?.event === 'error') {
                 const providerMessage =
@@ -1191,8 +1233,12 @@
                 });
             }
 
-            const lookupId = gatewayResponse.invoiceNumber || gatewayResponse.paymentId || order.id;
-            const statusResult = await pollPaymentResult(lookupId);
+            const statusLookup = gatewayResponse.invoiceNumber
+                ? { id: gatewayResponse.invoiceNumber, scope: 'invoice' }
+                : gatewayResponse.paymentId
+                    ? { id: gatewayResponse.paymentId, scope: 'payment' }
+                    : { id: order.id, scope: 'order' };
+            const statusResult = await pollPaymentResult(statusLookup);
             const finalStatus = String(statusResult?.status || '').toUpperCase();
 
             if (finalStatus === 'PAID') {
@@ -1244,8 +1290,7 @@
             const [requests, , orders] = await Promise.all([
                 loadRequests(),
                 loadBids(),
-                loadOrders(),
-                loadPayments(),
+                loadOrdersAndPayments(),
             ]);
             renderOrders(orders);
             renderRequests(requests);
@@ -1279,8 +1324,7 @@
             const [requests, , orders] = await Promise.all([
                 loadRequests(),
                 loadBids(),
-                loadOrders(),
-                loadPayments(),
+                loadOrdersAndPayments(),
             ]);
             renderOrders(orders);
             renderRequests(requests);
